@@ -345,24 +345,31 @@ function onVerifyCode() {
   const btn = document.getElementById('verifyBtn');
   btn.disabled = true; btn.textContent = '⏳';
 
-  fetch(GAS_URL + '?action=lookupStaffCode&code=' + encodeURIComponent(code))
-    .then(r => r.json())
-    .then(function(result) {
-      btn.disabled = false; btn.textContent = '✓ ตรวจสอบ';
-      if (result) {
-        verifiedReporter = result.name;
-        document.getElementById('reporterDisplay').textContent = result.name;
-        boxEl.classList.remove('hidden');
-        errEl.classList.add('hidden');
-      } else {
-        verifiedReporter = '';
-        boxEl.classList.add('hidden');
-        errEl.classList.remove('hidden');
-      }
-    })
-    .catch(function() {
-      btn.disabled = false; btn.textContent = '✓ ตรวจสอบ';
-    });
+  // ใช้ JSONP เพื่อหลีกเลี่ยง CORS
+  const cbName = '_cb_' + Date.now();
+  window[cbName] = function(result) {
+    delete window[cbName];
+    const s = document.getElementById('_jsonp_script');
+    if (s) s.remove();
+    btn.disabled = false; btn.textContent = '✓ ตรวจสอบ';
+    if (result && result.name) {
+      verifiedReporter = result.name;
+      document.getElementById('reporterDisplay').textContent = result.name;
+      boxEl.classList.remove('hidden');
+      errEl.classList.add('hidden');
+    } else {
+      verifiedReporter = '';
+      boxEl.classList.add('hidden');
+      errEl.classList.remove('hidden');
+    }
+  };
+  const script = document.createElement('script');
+  script.id  = '_jsonp_script';
+  script.src = GAS_URL + '?action=lookupStaffCode&code=' + encodeURIComponent(code) + '&callback=' + cbName;
+  script.onerror = function() {
+    btn.disabled = false; btn.textContent = '✓ ตรวจสอบ';
+  };
+  document.head.appendChild(script);
 }
 
 // ── GAS Backend URL ──────────────────────────────────────────
@@ -427,13 +434,14 @@ document.getElementById('outageForm').addEventListener('submit', function (e) {
   // แสดง overlay
   document.getElementById('overlay').classList.add('active');
 
-  // ส่งข้อมูลไปยัง GAS API
+  // ส่งข้อมูลไปยัง GAS (no-cors เพื่อหลีกเลี่ยง CORS preflight)
   fetch(GAS_URL, {
-    method : 'POST',
-    body   : JSON.stringify({ action: 'submitOutageForm', data: data })
+    method  : 'POST',
+    mode    : 'no-cors',
+    headers : { 'Content-Type': 'text/plain' },
+    body    : JSON.stringify({ action: 'submitOutageForm', data: data })
   })
-    .then(r => r.json())
-    .then(onSuccess)
+    .then(function() { onSuccess({ success: true, affectedCount: 0 }); })
     .catch(onFailure);
 });
 
