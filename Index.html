@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>แจ้งแผนดับไฟ – กฟภ.พะเยา</title>
+
+  <!-- LIFF SDK -->
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+  <!-- Google Fonts : Sarabun (Thai) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS (Play CDN – suitable for GAS Web App) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Sarabun', 'sans-serif'] },
+          fontSize: { base: ['18px', { lineHeight: '1.75' }] }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* base font 18 px ตามโจทย์ */
+    body { font-family: 'Sarabun', sans-serif; font-size: 18px; }
+
+    /* ซ่อน sub-district ทั้งหมดก่อน */
+    .tambon-group { display: none; }
+
+    /* Loading overlay */
+    #overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 50;
+      align-items: center; justify-content: center;
+    }
+    #overlay.active { display: flex; }
+
+    /* Spinner */
+    .spinner {
+      width: 56px; height: 56px;
+      border: 6px solid #fff3;
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+
+<body class="bg-blue-50 min-h-screen text-gray-800">
+
+<!-- ─── Loading Overlay ─────────────────────────────────── -->
+<div id="overlay">
+  <div class="text-center text-white">
+    <div class="spinner mx-auto mb-4"></div>
+    <p class="text-xl font-semibold">กำลังส่งข้อมูล...</p>
+  </div>
+</div>
+
+<!-- ─── Header ─────────────────────────────────────────────── -->
+<header class="bg-gradient-to-r from-blue-800 to-blue-600 text-white shadow-lg">
+  <div class="max-w-2xl mx-auto px-4 py-5 flex items-center gap-4">
+    <div class="bg-white rounded-full p-1 flex-shrink-0">
+      <!-- PEA Logo placeholder (lightning bolt) -->
+      <svg class="w-12 h-12 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+      </svg>
+    </div>
+    <div>
+      <h1 class="text-2xl font-bold leading-tight">แจ้งแผนดับไฟ</h1>
+      <p class="text-blue-200 text-base">กฟภ.พะเยา × อบจ.พะเยา</p>
+    </div>
+  </div>
+</header>
+
+<!-- ─── Notice Banner ──────────────────────────────────────── -->
+<div class="bg-yellow-50 border-l-4 border-yellow-400 max-w-2xl mx-auto mt-4 mx-4 px-4 py-3 rounded-r-lg flex gap-2 items-start">
+  <span class="text-yellow-500 text-2xl flex-shrink-0">⚠️</span>
+  <p class="text-yellow-800">ข้อมูลจะถูกส่งไปยัง <strong>ฝ่ายส่งเสริมสุขภาพ อบจ.พะเยา</strong> เพื่อแจ้งเตือนกลุ่มเปราะบางในพื้นที่ดับไฟ</p>
+</div>
+
+<!-- ─── Form Card ───────────────────────────────────────────── -->
+<main class="max-w-2xl mx-auto px-4 py-6">
+  <form id="outageForm" class="bg-white rounded-2xl shadow-md p-6 space-y-6">
+
+    <!-- ── ประเภทการแจ้ง ── -->
+    <section>
+      <h2 class="text-lg font-bold text-blue-800 border-b border-blue-100 pb-2 mb-4">
+        📋 ประเภทการแจ้ง
+      </h2>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="type-card flex items-center gap-3 border-2 border-gray-200 rounded-xl p-3 cursor-pointer hover:border-blue-400 transition-colors has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
+          <input type="radio" name="type" value="ดับไฟตามแผน" class="accent-blue-600" required />
+          <span>⚡ ดับไฟตามแผน</span>
+        </label>
+        <label class="type-card flex items-center gap-3 border-2 border-gray-200 rounded-xl p-3 cursor-pointer hover:border-blue-400 transition-colors has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
+          <input type="radio" name="type" value="ซ่อมฉุกเฉิน" class="accent-blue-600" />
+          <span>🔧 ซ่อมฉุกเฉิน</span>
+        </label>
+        <label class="type-card flex items-center gap-3 border-2 border-gray-200 rounded-xl p-3 cursor-pointer hover:border-blue-400 transition-colors has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
+          <input type="radio" name="type" value="บำรุงรักษา" class="accent-blue-600" />
+          <span>🛠 บำรุงรักษา</span>
+        </label>
+        <label class="type-card flex items-center gap-3 border-2 border-gray-200 rounded-xl p-3 cursor-pointer hover:border-blue-400 transition-colors has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
+          <input type="radio" name="type" value="สาธารณภัย" class="accent-blue-600" />
+          <span>🆘 สาธารณภัย</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- ── วันที่และเวลา ── -->
+    <section>
+      <h2 class="text-lg font-bold text-blue-800 border-b border-blue-100 pb-2 mb-4">
+        📅 วันที่และเวลา
+      </h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block font-semibold mb-1">วันที่ดับไฟ <span class="text-red-500">*</span></label>
+          <input type="date" id="outageDate" name="outageDate"
+            class="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+            required />
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block font-semibold mb-1">เวลาเริ่ม <span class="text-red-500">*</span></label>
+            <input type="time" id="startTime" name="startTime"
+              class="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+              required />
+          </div>
+          <div>
+            <label class="block font-semibold mb-1">เวลาสิ้นสุด <span class="text-red-500">*</span></label>
+            <input type="time" id="endTime" name="endTime"
+              class="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+              required />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── พื้นที่ ── -->
+    <section>
+      <h2 class="text-lg font-bold text-blue-800 border-b border-blue-100 pb-2 mb-4">
+        📍 พื้นที่ที่ได้รับผลกระทบ
+      </h2>
+      <div class="space-y-4">
+
+        <!-- อำเภอ -->
+        <div>
+          <label class="block font-semibold mb-1">อำเภอ <span class="text-red-500">*</span></label>
+          <select id="amphoe" name="amphoe"
+            class="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+            required onchange="onAmphoeChange(this.value)">
+            <option value="">– เลือกอำเภอ –</option>
+            <option>เมืองพะเยา</option>
+            <option>จุน</option>
+            <option>เชียงคำ</option>
+            <option>เชียงม่วน</option>
+            <option>ดอกคำใต้</option>
+            <option>ปง</option>
+            <option>แม่ใจ</option>
+            <option>ภูซาง</option>
+            <option>ภูกามยาว</option>
+          </select>
+        </div>
+
+        <!-- ตำบล (Dynamic) -->
+        <div>
+          <label class="block font-semibold mb-1">ตำบล <span class="text-red-500">*</span></label>
+          <select id="tambon" name="tambon"
+            class="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+            required onchange="onTambonChange(this.value)">
+            <option value="">– เลือกอำเภอก่อน –</option>
+          </select>
+        </div>
+
+        <!-- หมู่ (Chip Grid) -->
+        <div id="mooSection" class="hidden">
+          <label class="block font-semibold mb-2">หมู่ที่ได้รับผลกระทบ <span class="text-red-500">*</span></label>
+          <p id="mooHint" class="text-sm text-gray-500 mb-2">คลิกเลือก (เลือกได้หลายหมู่)</p>
+          <div id="mooGrid" class="flex flex-wrap gap-2"></div>
+          <input type="hidden" id="area" name="area" />
+        </div>
+      </div>
+    </section>
+
+    <!-- ── สาเหตุ ── -->
+    <section>
+      <h2 class="text-lg font-bold text-blue-800 border-b border-blue-100 pb-2 mb-4">
+        🔧 สาเหตุ / รายละเอียด
+      </h2>
+      <textarea id="reason" name="reason" rows="3"
+        placeholder="ระบุสาเหตุหรือรายละเอียดการดับไฟ..."
+        class="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+        required></textarea>
+    </section>
+
+    <!-- ── ผู้แจ้ง ── -->
+    <section>
+      <h2 class="text-lg font-bold text-blue-800 border-b border-blue-100 pb-2 mb-4">
+        👷 ข้อมูลผู้แจ้ง
+      </h2>
+      <div class="space-y-4">
+        <!-- รหัสเจ้าหน้าที่ -->
+        <div>
+          <label class="block font-semibold mb-1">รหัสเจ้าหน้าที่ <span class="text-red-500">*</span></label>
+          <div class="flex gap-2">
+            <input type="text" id="staffCode" placeholder="เช่น a001"
+              class="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+              autocomplete="off" />
+            <button type="button" id="verifyBtn" onclick="onVerifyCode()"
+              class="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold px-5 py-3 rounded-xl transition-all whitespace-nowrap">
+              ✓ ตรวจสอบ
+            </button>
+          </div>
+          <p id="codeError" class="hidden text-red-600 text-sm mt-1">❌ รหัสไม่ถูกต้อง กรุณาตรวจสอบ</p>
+        </div>
+        <!-- ชื่อ-สกุล (auto-fill) -->
+        <div id="reporterBox" class="hidden bg-green-50 border border-green-300 rounded-xl px-4 py-3">
+          <p class="text-sm text-green-700">✅ เจ้าหน้าที่ที่มีสิทธิ์แจ้ง</p>
+          <p id="reporterDisplay" class="text-lg font-bold text-green-800"></p>
+        </div>
+        <!-- หมายเหตุ -->
+        <div>
+          <label class="block font-semibold mb-1">หมายเหตุเพิ่มเติม</label>
+          <input type="text" id="note" name="note" placeholder="(ไม่บังคับ)"
+            class="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        </div>
+      </div>
+    </section>
+
+    <!-- ── ปุ่ม Submit ── -->
+    <button type="submit"
+      class="w-full bg-blue-700 hover:bg-blue-800 active:scale-95 text-white font-bold text-xl py-4 rounded-2xl shadow-md transition-all duration-150 flex items-center justify-center gap-2">
+      <span>📤</span> ส่งแจ้งเตือน
+    </button>
+
+  </form>
+
+  <!-- ─── Result Message ─────────────────────────────────── -->
+  <div id="resultBox" class="hidden mt-4 rounded-2xl p-5 text-center text-xl font-semibold shadow"></div>
+
+</main>
+
+<!-- ─── Footer ─────────────────────────────────────────────── -->
+<footer class="text-center text-gray-400 text-sm py-6">
+  ระบบ PEA ALERT · ฝ่ายส่งเสริมสุขภาพ กองสาธารณสุขฯ อบจ.พะเยา
+</footer>
+
+<!-- ─── Script ─────────────────────────────────────────────── -->
+<script>
+// ── ข้อมูลตำบลแยกตามอำเภอ ─────────────────────────────────
+const TAMBON_DATA = {
+  'เมืองพะเยา': ['แม่ต๋ำ','แม่นาเรือ','บ้านตุ่น','บ้านต๊ำ','บ้านต๋อม','จำป่าหวาย','ท่าวังทอง',
+    'แม่ใส','บ้านสาง','ท่าจำปี','สัน','แม่กา','บ้านใหม่','จอมทอง','เวียง','ดอนศรีชุม',
+    'แม่ปืม','ห้วยแก้ว','สันป่าม่วง'],
+  'จุน': ['ห้วยข้าวก่ำ','จุน','ลอ','หงส์หิน','ทุ่งรวงทอง','ยางสูง','พระธาตุขิงแกง'],
+  'เชียงคำ': ['หย่วน','น้ำแวน','เวียง','ฝายกวาง','เชียงบาน','แม่ลาว','อ่างทอง',
+    'สบบง','ร่มเย็น','เจดีย์คำ','ผาลาด','ทุ่งผาสุข'],
+  'เชียงม่วน': ['เชียงม่วน','บ้านมาง','สระ'],
+  'ดอกคำใต้': ['ดอกคำใต้','ดอนศรีชุม','บ้านถ้ำ','บ้านปิน','ห้วยลาน','สันโค้ง','ป่าซาง',
+    'หนองหล่ม','โค้งงาม','คือเวียง'],
+  'ปง': ['ปง','ควร','ออย','งิม','ผาช้างน้อย','นาปรัง','ขุนควร'],
+  'แม่ใจ': ['แม่ใจ','ศรีถ้อย','แม่สุก','ป่าแฝก','บ้านเหล่า','พานา'],
+  'ภูซาง': ['ภูซาง','ป่าสัก','ทุ่งกล้วย','เชียงแรง','สบปราบ','หนองป่าแพะ'],
+  'ภูกามยาว': ['ห้วยแก้ว','ดงเจน','แม่อิง']
+};
+
+let selectedMoos = new Set();
+let verifiedReporter = '';
+
+function onAmphoeChange(val) {
+  const sel = document.getElementById('tambon');
+  sel.innerHTML = '<option value="">– เลือกตำบล –</option>';
+  if (!val || !TAMBON_DATA[val]) return;
+  TAMBON_DATA[val].forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t; opt.textContent = t;
+    sel.appendChild(opt);
+  });
+  hideMooGrid();
+}
+
+function onTambonChange(val) {
+  if (!val) { hideMooGrid(); return; }
+  buildMooGrid();
+}
+
+function hideMooGrid() {
+  document.getElementById('mooSection').classList.add('hidden');
+  document.getElementById('area').value = '';
+  selectedMoos.clear();
+}
+
+function buildMooGrid() {
+  const grid = document.getElementById('mooGrid');
+  grid.innerHTML = '';
+  selectedMoos.clear();
+  for (let i = 1; i <= 20; i++) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.dataset.moo = i;
+    btn.textContent = i;
+    btn.className = 'w-11 h-11 rounded-full border-2 border-blue-300 text-blue-700 text-base font-bold bg-white hover:bg-blue-50 transition-all';
+    btn.addEventListener('click', () => toggleMoo(btn, i));
+    grid.appendChild(btn);
+  }
+  document.getElementById('mooSection').classList.remove('hidden');
+  updateAreaValue();
+}
+
+function toggleMoo(btn, num) {
+  if (selectedMoos.has(num)) {
+    selectedMoos.delete(num);
+    btn.className = 'w-11 h-11 rounded-full border-2 border-blue-300 text-blue-700 text-base font-bold bg-white hover:bg-blue-50 transition-all';
+  } else {
+    selectedMoos.add(num);
+    btn.className = 'w-11 h-11 rounded-full border-2 border-blue-600 text-white text-base font-bold bg-blue-600 transition-all';
+  }
+  updateAreaValue();
+}
+
+function updateAreaValue() {
+  const sorted = [...selectedMoos].sort((a, b) => a - b);
+  document.getElementById('area').value = sorted.length > 0 ? 'หมู่ ' + sorted.join(', ') : '';
+  document.getElementById('mooHint').textContent = sorted.length > 0
+    ? '✅ เลือกแล้ว ' + sorted.length + ' หมู่: ' + sorted.join(', ')
+    : 'คลิกเลือก (เลือกได้หลายหมู่)';
+}
+
+function onVerifyCode() {
+  const code = document.getElementById('staffCode').value.trim();
+  const errEl = document.getElementById('codeError');
+  const boxEl = document.getElementById('reporterBox');
+  errEl.classList.add('hidden');
+  if (!code) return;
+
+  const btn = document.getElementById('verifyBtn');
+  btn.disabled = true; btn.textContent = '⏳';
+
+  fetch(GAS_URL + '?action=lookupStaffCode&code=' + encodeURIComponent(code))
+    .then(r => r.json())
+    .then(function(result) {
+      btn.disabled = false; btn.textContent = '✓ ตรวจสอบ';
+      if (result) {
+        verifiedReporter = result.name;
+        document.getElementById('reporterDisplay').textContent = result.name;
+        boxEl.classList.remove('hidden');
+        errEl.classList.add('hidden');
+      } else {
+        verifiedReporter = '';
+        boxEl.classList.add('hidden');
+        errEl.classList.remove('hidden');
+      }
+    })
+    .catch(function() {
+      btn.disabled = false; btn.textContent = '✓ ตรวจสอบ';
+    });
+}
+
+// ── GAS Backend URL ──────────────────────────────────────────
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzVkwHILDUYiZFv3EAch-vrRPFd3FoPVaFe78NT9Ux5fzk-hdmL0CWsUg0wG43Ini1p0Q/exec';
+
+// ── LIFF init + ตั้งวันที่ ────────────────────────────────────
+const LIFF_ID = '2008146046-IvpQclgZ';
+
+window.addEventListener('DOMContentLoaded', () => {
+  // ตั้งวันที่
+  const today = new Date();
+  const yyyy  = today.getFullYear();
+  const mm    = String(today.getMonth() + 1).padStart(2, '0');
+  const dd    = String(today.getDate()).padStart(2, '0');
+  document.getElementById('outageDate').value = `${yyyy}-${mm}-${dd}`;
+
+  // init LIFF (ถ้าเปิดจาก LINE)
+  if (typeof liff !== 'undefined') {
+    liff.init({ liffId: LIFF_ID }).catch(err => {
+      console.log('LIFF init skip (not in LINE):', err.message);
+    });
+  }
+});
+
+// ── Form Submit ──────────────────────────────────────────────
+document.getElementById('outageForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+
+  // เช็คว่าเลือกประเภทแล้ว
+  const typeVal = document.querySelector('input[name="type"]:checked');
+  if (!typeVal) { showResult('กรุณาเลือกประเภทการแจ้ง', false); return; }
+
+  // เช็คหมู่
+  if (!document.getElementById('area').value) {
+    showResult('กรุณาเลือกหมู่ที่ได้รับผลกระทบ', false); return;
+  }
+
+  // เช็ครหัสเจ้าหน้าที่
+  if (!verifiedReporter) {
+    showResult('กรุณาตรวจสอบรหัสเจ้าหน้าที่ก่อนส่ง', false); return;
+  }
+
+  const data = {
+    type      : typeVal.value,
+    outageDate: document.getElementById('outageDate').value,
+    startTime : document.getElementById('startTime').value,
+    endTime   : document.getElementById('endTime').value,
+    amphoe    : document.getElementById('amphoe').value,
+    tambon    : document.getElementById('tambon').value,
+    area      : document.getElementById('area').value,
+    reason    : document.getElementById('reason').value,
+    reporter  : verifiedReporter,
+    staffCode : document.getElementById('staffCode').value.trim(),
+    phone     : '',
+    note      : document.getElementById('note').value
+  };
+
+  // แปลง startTime / endTime เป็น HH:MM น.
+  data.startTime = fmtTime(data.startTime);
+  data.endTime   = fmtTime(data.endTime);
+
+  // แสดง overlay
+  document.getElementById('overlay').classList.add('active');
+
+  // ส่งข้อมูลไปยัง GAS API
+  fetch(GAS_URL, {
+    method : 'POST',
+    body   : JSON.stringify({ action: 'submitOutageForm', data: data })
+  })
+    .then(r => r.json())
+    .then(onSuccess)
+    .catch(onFailure);
+});
+
+function fmtTime(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':');
+  return `${h}:${m}`;
+}
+
+function onSuccess(result) {
+  document.getElementById('overlay').classList.remove('active');
+  if (result.success) {
+    const cnt = result.affectedCount;
+    showResult(
+      `✅ ส่งแจ้งเตือนสำเร็จ!\n` +
+      `พบกลุ่มเปราะบางในพื้นที่ ${cnt} ราย\n` +
+      (cnt > 0 ? '📲 ส่ง LINE แจ้งเจ้าหน้าที่สาธารณสุขแล้ว' : 'ไม่พบกลุ่มเปราะบางในพื้นที่นี้'),
+      true
+    );
+    document.getElementById('outageForm').reset();
+    verifiedReporter = '';
+    document.getElementById('reporterBox').classList.add('hidden');
+    document.getElementById('codeError').classList.add('hidden');
+    hideMooGrid();
+  } else {
+    showResult('❌ เกิดข้อผิดพลาด: ' + result.message, false);
+  }
+}
+
+function onFailure(err) {
+  document.getElementById('overlay').classList.remove('active');
+  showResult('❌ เกิดข้อผิดพลาด: ' + err.message, false);
+}
+
+function showResult(msg, success) {
+  const box = document.getElementById('resultBox');
+  box.textContent  = msg;
+  box.className    = `mt-4 rounded-2xl p-5 text-center text-xl font-semibold shadow whitespace-pre-line ${
+    success ? 'bg-green-50 text-green-800 border border-green-300'
+            : 'bg-red-50 text-red-800 border border-red-300'}`;
+  box.scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+</body>
+</html>
