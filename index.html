@@ -395,11 +395,33 @@ window.addEventListener('DOMContentLoaded', () => {
   const dd    = String(today.getDate()).padStart(2, '0');
   document.getElementById('outageDate').value = `${yyyy}-${mm}-${dd}`;
 
-  // init LIFF (ถ้าเปิดจาก LINE)
+  // init LIFF + ดึง userId ของผู้แจ้ง
+  window._lineUserId = '';
   if (typeof liff !== 'undefined') {
-    liff.init({ liffId: LIFF_ID }).catch(err => {
-      console.log('LIFF init skip (not in LINE):', err.message);
-    });
+    liff.init({ liffId: LIFF_ID })
+      .then(function() {
+        // getContext() synchronous — ไม่ต้องรอ network call เพิ่ม
+        try {
+          const ctx = liff.getContext();
+          if (ctx && ctx.userId) {
+            window._lineUserId = ctx.userId;
+            console.log('LIFF userId (context):', ctx.userId);
+            return; // ได้แล้ว ไม่ต้อง getProfile
+          }
+        } catch(e) {}
+        // fallback: getProfile (กรณี context ไม่มี userId)
+        if (liff.isLoggedIn()) {
+          return liff.getProfile().then(function(profile) {
+            if (profile && profile.userId) {
+              window._lineUserId = profile.userId;
+              console.log('LIFF userId (profile):', profile.userId);
+            }
+          });
+        }
+      })
+      .catch(function(err) {
+        console.log('LIFF init skip (not in LINE):', err.message);
+      });
   }
 });
 
@@ -433,7 +455,8 @@ document.getElementById('outageForm').addEventListener('submit', function (e) {
     reporter  : verifiedReporter,
     staffCode : document.getElementById('staffCode').value.trim(),
     phone     : '',
-    note      : document.getElementById('note').value
+    note      : document.getElementById('note').value,
+    userId    : _getLineUserId()            // LINE userId ของผู้แจ้ง (สำหรับส่ง confirm กลับ)
   };
 
   // แปลง startTime / endTime เป็น HH:MM น.
@@ -443,16 +466,54 @@ document.getElementById('outageForm').addEventListener('submit', function (e) {
   // แสดง overlay
   document.getElementById('overlay').classList.add('active');
 
-  // ส่งข้อมูลไปยัง GAS (no-cors เพื่อหลีกเลี่ยง CORS preflight)
-  fetch(GAS_URL, {
-    method  : 'POST',
-    mode    : 'no-cors',
-    headers : { 'Content-Type': 'text/plain' },
-    body    : JSON.stringify({ action: 'submitOutageForm', data: data })
-  })
-    .then(function() { onSuccess({ success: true, affectedCount: 0 }); })
-    .catch(onFailure);
+  // 1. ดึงรายชื่อกลุ่มเสี่ยง (JSONP) → 2. ส่งฟอร์ม (no-cors) → 3. render card
+  _fetchVulnerable(data.amphoe, data.tambon, data.area, function(vulnList) {
+    fetch(GAS_URL, {
+      method  : 'POST',
+      mode    : 'no-cors',
+      headers : { 'Content-Type': 'text/plain' },
+      body    : JSON.stringify({ action: 'submitOutageForm', data: data })
+    })
+      .then(function() { onSuccess(data, vulnList); })
+      .catch(onFailure);
+  });
 });
+
+// ── ดึง LINE userId ณ เวลา submit ──────────────────────────
+function _getLineUserId() {
+  // 1. จาก cache ที่ดึงตอน init
+  if (window._lineUserId) return window._lineUserId;
+  // 2. ลอง getContext() อีกครั้ง (synchronous)
+  try {
+    if (typeof liff !== 'undefined') {
+      const ctx = liff.getContext();
+      if (ctx && ctx.userId) {
+        window._lineUserId = ctx.userId;
+        return ctx.userId;
+      }
+    }
+  } catch(e) {}
+  return '';
+}
+
+// ── JSONP: ดึงกลุ่มเสี่ยงจาก GAS ──────────────────────────
+function _fetchVulnerable(amphoe, tambon, area, cb) {
+  const cbName = '_vuln_' + Date.now();
+  window[cbName] = function(data) {
+    delete window[cbName];
+    document.head.removeChild(s);
+    cb(Array.isArray(data) ? data : []);
+  };
+  const s = document.createElement('script');
+  s.src = GAS_URL
+    + '?action=lookupVulnerable'
+    + '&amphoe=' + encodeURIComponent(amphoe)
+    + '&tambon=' + encodeURIComponent(tambon)
+    + '&area='   + encodeURIComponent(area)
+    + '&callback=' + cbName;
+  s.onerror = function() { delete window[cbName]; cb([]); };
+  document.head.appendChild(s);
+}
 
 function fmtTime(t) {
   if (!t) return '';
@@ -460,38 +521,140 @@ function fmtTime(t) {
   return `${h}:${m}`;
 }
 
-function onSuccess(result) {
+function onSuccess(od, vulnList) {
   document.getElementById('overlay').classList.remove('active');
-  if (result.success) {
-    const cnt = result.affectedCount;
-    showResult(
-      `✅ ส่งแจ้งเตือนสำเร็จ!\n` +
-      `พบกลุ่มเปราะบางในพื้นที่ ${cnt} ราย\n` +
-      (cnt > 0 ? '📲 ส่ง LINE แจ้งเจ้าหน้าที่สาธารณสุขแล้ว' : 'ไม่พบกลุ่มเปราะบางในพื้นที่นี้'),
-      true
-    );
-    document.getElementById('outageForm').reset();
-    verifiedReporter = '';
-    document.getElementById('reporterBox').classList.add('hidden');
-    document.getElementById('codeError').classList.add('hidden');
-    hideMooGrid();
-  } else {
-    showResult('❌ เกิดข้อผิดพลาด: ' + result.message, false);
-  }
+
+  // render card คล้าย LINE Flex Message
+  const box = document.getElementById('resultBox');
+  box.className = '';
+  box.innerHTML = _buildResultCard(od, vulnList);
+  box.scrollIntoView({ behavior: 'smooth' });
+
+  // reset form
+  document.getElementById('outageForm').reset();
+  verifiedReporter = '';
+  document.getElementById('reporterBox').classList.add('hidden');
+  document.getElementById('codeError').classList.add('hidden');
+  hideMooGrid();
 }
 
 function onFailure(err) {
   document.getElementById('overlay').classList.remove('active');
-  showResult('❌ เกิดข้อผิดพลาด: ' + err.message, false);
+  const box = document.getElementById('resultBox');
+  box.className   = 'mt-4 rounded-2xl p-5 text-center text-xl font-semibold shadow bg-red-50 text-red-800 border border-red-300';
+  box.textContent = '❌ เกิดข้อผิดพลาด: ' + (err.message || err);
 }
 
-function showResult(msg, success) {
-  const box = document.getElementById('resultBox');
-  box.textContent  = msg;
-  box.className    = `mt-4 rounded-2xl p-5 text-center text-xl font-semibold shadow whitespace-pre-line ${
-    success ? 'bg-green-50 text-green-800 border border-green-300'
-            : 'bg-red-50 text-red-800 border border-red-300'}`;
-  box.scrollIntoView({ behavior: 'smooth' });
+// ── สร้าง HTML card คล้าย LINE Flex Message ─────────────────
+function _buildResultCard(od, vuln) {
+  const areaText = (od.area ? od.area + '  ' : '') + 'ต.' + od.tambon + '  อ.' + od.amphoe;
+  const typeColors = {
+    'ดับไฟตามแผน': '#1565C0', 'ซ่อมฉุกเฉิน': '#C62828',
+    'บำรุงรักษา' : '#2E7D32', 'สาธารณภัย'  : '#E65100'
+  };
+  const hdrColor = typeColors[od.type] || '#1565C0';
+
+  // จัดกลุ่มตามหมู่
+  const byMoo = {};
+  (vuln || []).forEach(function(p) {
+    const k = p.moo ? 'หมู่ ' + p.moo : 'ไม่ระบุหมู่';
+    if (!byMoo[k]) byMoo[k] = [];
+    byMoo[k].push(p);
+  });
+  const mooKeys = Object.keys(byMoo).sort(function(a, b) {
+    return parseInt(a.replace(/\D/g,'')) - parseInt(b.replace(/\D/g,''));
+  });
+
+  // แถวกลุ่มเสี่ยง
+  let vulnHtml = '';
+  if (vuln && vuln.length > 0) {
+    let idx = 1;
+    mooKeys.forEach(function(mk) {
+      const ppl = byMoo[mk];
+      vulnHtml += `
+        <div style="background:#546E7A;border-radius:6px;padding:6px 10px;margin:6px 0;display:flex;justify-content:space-between;align-items:center;">
+          <span style="color:#fff;font-weight:700;font-size:14px;">📍 ${mk}</span>
+          <span style="color:#FFD600;font-weight:700;font-size:13px;">${ppl.length} คน</span>
+        </div>`;
+      ppl.forEach(function(p) {
+        const noteColor = p.note && p.note.includes('ไม่จำเป็น') ? '#F9A825'
+                        : p.note && p.note.includes('จำเป็น')    ? '#C62828' : '#E65100';
+        const deviceNote = p.device + (p.note ? ' (' + p.note + ')' : '');
+        vulnHtml += `
+          <div style="background:${noteColor};border-radius:8px;padding:8px 10px;margin:4px 0;">
+            <div style="color:#FFD600;font-weight:700;font-size:13px;">${idx++}. <span style="color:#fff;">${p.name}</span></div>
+            <div style="color:#ffffffdd;font-size:12px;">🔌 ${deviceNote}</div>
+            <div style="color:#ffffffaa;font-size:11px;">🏠 บ้านเลขที่ ${p.address}  ต.${p.tambon}</div>
+          </div>`;
+      });
+    });
+    vulnHtml += `<div style="color:#FFFF99;font-weight:700;font-size:13px;text-align:center;margin-top:8px;padding-top:8px;border-top:1px solid #ffffff40;">⚕️ ส่ง LINE แจ้ง รพสต. ในพื้นที่แล้ว</div>`;
+  } else {
+    vulnHtml = `<div style="color:#aaa;font-size:13px;text-align:center;">ℹ️ ไม่พบกลุ่มเสี่ยงในพื้นที่</div>`;
+  }
+
+  const footerBg = (vuln && vuln.length > 0) ? '#37474F' : '#f5f5f5';
+
+  return `
+  <div style="border-radius:16px;overflow:hidden;box-shadow:0 4px 16px #0003;margin-top:16px;font-family:'Sarabun',sans-serif;">
+
+    <!-- Header -->
+    <div style="background:${hdrColor};padding:16px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:28px;">✅</span>
+        <div>
+          <div style="color:#fff;font-weight:700;font-size:18px;">ส่งการแจ้งเตือนสำเร็จ</div>
+          <div style="color:#ffffffaa;font-size:12px;">PEA ALERT · อบจ.พะเยา</div>
+        </div>
+      </div>
+      <div style="background:#ffffff33;border-radius:20px;padding:3px 12px;display:inline-block;margin-top:8px;">
+        <span style="color:#fff;font-size:12px;font-weight:700;">${od.type}</span>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div style="background:#fff;padding:16px;">
+      ${_row('📅','วันที่ดับไฟ', _toThaiDateJS(od.outageDate))}
+      ${_row('⏰','ช่วงเวลา', od.startTime + ' – ' + od.endTime + ' น.')}
+      ${_row('📍','พื้นที่', areaText)}
+      <hr style="margin:10px 0;border-color:#eee;"/>
+      ${_row('🔧','สาเหตุ', od.reason)}
+      <hr style="margin:10px 0;border-color:#eee;"/>
+      ${_row('👷','ผู้แจ้ง', od.reporter)}
+      <hr style="margin:10px 0;border-color:#eee;"/>
+      ${_row('📣','ส่งแจ้งเตือนไปยัง','รพสต. ทุกแห่งในพื้นที่')}
+    </div>
+
+    <!-- Footer: กลุ่มเสี่ยง -->
+    <div style="background:${footerBg};padding:12px 14px;">
+      ${vuln && vuln.length > 0
+        ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+             <span style="color:#fff;font-weight:700;font-size:15px;">👥 กลุ่มเสี่ยงในพื้นที่</span>
+             <span style="color:#FFD600;font-size:13px;">${vuln.length} คน | ${mooKeys.length} หมู่</span>
+           </div>
+           <div style="border-top:1px solid #ffffff40;margin-bottom:6px;"></div>`
+        : ''}
+      ${vulnHtml}
+    </div>
+  </div>`;
+}
+
+function _row(icon, label, val) {
+  return `<div style="display:flex;align-items:flex-start;gap:6px;margin:6px 0;">
+    <span style="font-size:15px;flex-shrink:0;">${icon}</span>
+    <span style="color:#888;font-size:13px;flex:3;">${label}</span>
+    <span style="color:#222;font-size:13px;font-weight:700;flex:5;">${val || '-'}</span>
+  </div>`;
+}
+
+function _toThaiDateJS(dateStr) {
+  const MONTHS = ['','มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
+                  'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+  try {
+    const p = dateStr.split('-');
+    const y = parseInt(p[0]) + 543;
+    return parseInt(p[2]) + ' ' + MONTHS[parseInt(p[1])] + ' ' + y;
+  } catch(e) { return dateStr; }
 }
 </script>
 </body>
